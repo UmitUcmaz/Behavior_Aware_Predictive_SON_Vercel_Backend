@@ -7,6 +7,7 @@ export const maxDuration = 300;
 
 const GET_PATHS = [
   /^health$/,
+  /^forecast\/uploaded\/events$/,
   /^dataset-generator\/generate\/events$/,
   /^forecast\/generated\/events$/,
   /^forecast\/FR-\d{8}T\d{12}Z\/(chart|status)$/,
@@ -15,6 +16,7 @@ const GET_PATHS = [
 ];
 const POST_PATHS = [
   /^session\/cleanup$/,
+  /^forecast\/inspect-blob$/,
   /^dataset-generator\/generate(?:\/stream)?$/,
   /^forecast\/(inspect|start|generated(?:\/stream)?)$/,
   /^validate$/,
@@ -98,7 +100,7 @@ async function forward(request: Request, context: Context) {
     let body = response.body;
     if (response.ok) {
       const contentType = response.headers.get("content-type") ?? "";
-      if (body && /^forecast\/generated\/(events|stream)$/.test(pathname)) {
+      if (body && /^forecast\/(generated|uploaded)\/(events|stream)$/.test(pathname)) {
         body = observeForecastStream(body, contentType);
       } else if (contentType.includes("application/json") &&
           (pathname === "son/evaluate" || /^forecast\/(start|generated|FR-\d{8}T\d{12}Z\/status)$/.test(pathname))) {

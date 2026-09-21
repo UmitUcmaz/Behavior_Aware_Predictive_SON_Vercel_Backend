@@ -869,7 +869,7 @@ export default function AboutPage() {
 
 
               <a
-                href="https://medium.com/@umitucmaz.project/behavior-value-aware-cellular-traffic-forecasting-with-machine-learning-3be985e06fff?postPublishedType=initial"
+                href="https://medium.com/@umitucmaz.project/from-cellular-traffic-forecasting-to-behavior-aware-predictive-son-c38f5d2c4686"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Read Ümit Uçmaz project article on Medium"
@@ -899,7 +899,7 @@ export default function AboutPage() {
 
 
               <a
-                href="https://github.com/UmitUcmaz"
+                href="https://github.com/UmitUcmaz/Behavior_Aware_Predictive_SON_Vercel_Backend"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Open Ümit Uçmaz GitHub profile"

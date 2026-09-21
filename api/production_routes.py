@@ -48,6 +48,7 @@ router = APIRouter()
 
 
 WORKING_BLOB_PREFIXES = (
+    "uploads/forecast/",
     "generations/",
     "forecast-runs/",
     "validation-runs/",
@@ -66,6 +67,7 @@ GENERATION_BLOB_FILES = (
 )
 
 FORECAST_BLOB_FILES = (
+    "history.csv",
     "forecast.csv",
     "run_metadata.json",
 )

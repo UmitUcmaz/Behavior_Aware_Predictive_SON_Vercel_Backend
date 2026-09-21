@@ -497,18 +497,12 @@ async def get_forecast_chart_data(
             )
         )
 
-        generation_id = (
-            _resolve_generation_id(
-                metadata
-            )
-        )
-
-        history_path = (
-            _resolve_history_path(
-                metadata,
-                generation_id,
-            )
-        )
+        if metadata.get("source_type") == "uploaded":
+            # Fixed run-owned history path; never accept arbitrary metadata URLs.
+            history_path = f"{FORECAST_RUNS_PREFIX}/{run_id}/history.csv"
+        else:
+            generation_id = _resolve_generation_id(metadata)
+            history_path = _resolve_history_path(metadata, generation_id)
 
         forecast_path = (
             _resolve_forecast_path(

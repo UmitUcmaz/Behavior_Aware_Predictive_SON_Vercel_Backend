@@ -7,6 +7,9 @@ import {
   useState,
 } from "react";
 
+import { upload } from "@vercel/blob/client";
+import { validateCsvFile } from "../../lib/forecast-upload.mjs";
+
 import ForecastTrafficChart from "@/components/ForecastTrafficChart";
 import ForecastExecutionStatus from "@/components/ForecastExecutionStatus";
 
@@ -676,6 +679,9 @@ function ForecastChartPlaceholder({
 
 export default function ForecastPage() {
 
+  const uploadSequence = useRef(0);
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
+
   const fileInputRef =
     useRef<HTMLInputElement>(null);
 
@@ -918,6 +924,8 @@ export default function ForecastPage() {
 
 
   const resetForecast = () => {
+    uploadSequence.current += 1;
+    setUploadedPath(null);
 
     const storedArtifacts =
       readStoredArtifactIds();
@@ -1015,27 +1023,27 @@ export default function ForecastPage() {
       setErrorMessage(null);
 
 
-      const formData =
-        new FormData();
-
-      formData.append(
-        "file",
-        file
-      );
-
-
+      const sequence = ++uploadSequence.current;
+      setUploadedPath(null);
       try {
-
-        const response =
-          await fetch(
-            `${API_BASE_URL}/forecast/inspect`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
-
-
+        validateCsvFile(file);
+        const pathname = `uploads/forecast/${crypto.randomUUID()}/history.csv`;
+        let blob;
+        try {
+          blob = await upload(pathname, file, {
+            access: "private", multipart: true, contentType: "text/csv",
+            handleUploadUrl: "/api/forecast-upload",
+            clientPayload: JSON.stringify({ name: file.name, size: file.size, type: file.type }),
+          });
+        } catch {
+          throw new Error("Private CSV upload failed. Check your connection and retry (maximum 50 MiB).");
+        }
+        if (sequence !== uploadSequence.current) return;
+        const response = await fetch(`${API_BASE_URL}/forecast/inspect-blob`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pathname: blob.pathname, filename: file.name }),
+        });
+        if (sequence !== uploadSequence.current) return;
         if (!response.ok) {
 
           let detail =
@@ -1070,6 +1078,8 @@ export default function ForecastPage() {
             await response.json();
 
 
+        if (sequence !== uploadSequence.current) return;
+        setUploadedPath(blob.pathname);
         setInspection(
           data
         );
@@ -1082,6 +1092,7 @@ export default function ForecastPage() {
         error
       ) {
 
+        if (sequence !== uploadSequence.current) return;
         setInspectionState(
           "error"
         );
@@ -1471,7 +1482,7 @@ export default function ForecastPage() {
         }
 
       } else if (
-        !selectedFile ||
+        !selectedFile || !uploadedPath ||
         inspectionState !==
           "validated"
       ) {
@@ -1517,8 +1528,8 @@ export default function ForecastPage() {
 
 
       if (
-        inputMode === "generate" &&
-        generation
+        (inputMode === "generate" && generation) ||
+        (inputMode === "upload" && uploadedPath && inspection)
       ) {
 
         const totalSteps =
@@ -1527,7 +1538,7 @@ export default function ForecastPage() {
           );
 
         const expected =
-          generation.cell_count *
+          (generation?.cell_count ?? inspection?.total_cells ?? 0) *
           totalSteps;
 
         setLiveProgress(
@@ -1542,9 +1553,9 @@ export default function ForecastPage() {
             total_steps:
               totalSteps,
             active_cells:
-              generation.cell_count,
+              (generation?.cell_count ?? inspection?.total_cells ?? 0),
             total_cells:
-              generation.cell_count,
+              (generation?.cell_count ?? inspection?.total_cells ?? 0),
             rows_generated: 0,
             expected_rows:
               expected,
@@ -1566,17 +1577,9 @@ export default function ForecastPage() {
 
 
           await openEventSourceStream<ForecastStreamEvent>(
-            (
-              `${API_BASE_URL}/forecast/generated/events`
-              + `?generation_id=${encodeURIComponent(
-                generation.generation_id
-              )}`
-              + `&horizon_steps=${encodeURIComponent(
-                String(
-                  totalSteps
-                )
-              )}`
-            ),
+            inputMode === "generate" && generation
+              ? `${API_BASE_URL}/forecast/generated/events?generation_id=${encodeURIComponent(generation.generation_id)}&horizon_steps=${totalSteps}`
+              : `${API_BASE_URL}/forecast/uploaded/events?pathname=${encodeURIComponent(uploadedPath!)}&filename=${encodeURIComponent(selectedFile!.name)}&horizon_steps=${totalSteps}`,
             (event) => {
               if (
                 event.type ===
@@ -1676,9 +1679,9 @@ export default function ForecastPage() {
                   run_id:
                     forecastResult.run_id,
                   generation_id:
-                    generation.generation_id,
+                    generation?.generation_id ?? null,
                   source_type:
-                    "generated",
+                    inputMode === "generate" ? "generated" : "uploaded",
                   horizon_steps:
                     forecastResult.horizon_steps,
                 }
@@ -1699,203 +1702,9 @@ export default function ForecastPage() {
           );
 
           setLiveProgress(null);
-
-          if (
-            error instanceof Error
-          ) {
-
-            setErrorMessage(
-              error.message
-            );
-
-          } else {
-
-            setErrorMessage(
-              "An unexpected forecast error occurred."
-            );
-          }
+          setErrorMessage(error instanceof Error ? error.message : "An unexpected forecast error occurred.");
         }
-
         return;
-      }
-
-
-      setLiveProgress(null);
-
-
-      const formData =
-        new FormData();
-
-      formData.append(
-        "file",
-        selectedFile as File
-      );
-
-      formData.append(
-        "horizon_steps",
-        horizon
-      );
-
-
-      try {
-
-        const startResponse =
-          await fetch(
-            `${API_BASE_URL}/forecast/start`,
-            {
-              method: "POST",
-              body: formData,
-            }
-          );
-
-
-        if (!startResponse.ok) {
-
-          let detail =
-            `Forecast start failed (${startResponse.status}).`;
-
-          try {
-
-            const body =
-              await startResponse.json();
-
-            if (body?.detail) {
-              detail =
-                String(
-                  body.detail
-                );
-            }
-
-          } catch {
-            // Keep generic error.
-          }
-
-          throw new Error(
-            detail
-          );
-        }
-
-
-        const startData:
-          ForecastJobStatus =
-            await startResponse.json();
-
-
-        setLiveProgress(
-          startData
-        );
-
-
-        const runId =
-          startData.run_id;
-
-
-        while (true) {
-
-          await new Promise(
-            (
-              resolve
-            ) =>
-              setTimeout(
-                resolve,
-                400
-              )
-          );
-
-
-          const statusResponse =
-            await fetch(
-              `${API_BASE_URL}/forecast/${runId}/status`,
-              {
-                cache: "no-store",
-              }
-            );
-
-
-          if (
-            !statusResponse.ok
-          ) {
-            throw new Error(
-              (
-                "Unable to read live "
-                + "forecast status."
-              )
-            );
-          }
-
-
-          const statusData:
-            ForecastJobStatus =
-              await statusResponse.json();
-
-
-          setLiveProgress(
-            statusData
-          );
-
-
-          if (
-            statusData.status ===
-              "completed"
-          ) {
-
-            if (
-              !statusData.result
-            ) {
-              throw new Error(
-                (
-                  "Forecast completed "
-                  + "without result data."
-                )
-              );
-            }
-
-            setResult(
-              statusData.result
-            );
-
-            setRunState(
-              "completed"
-            );
-
-            break;
-          }
-
-
-          if (
-            statusData.status ===
-              "error"
-          ) {
-
-            throw new Error(
-              statusData.error ??
-              "Forecast failed."
-            );
-          }
-        }
-
-      } catch (
-        error
-      ) {
-
-        setRunState(
-          "error"
-        );
-
-        if (
-          error instanceof Error
-        ) {
-
-          setErrorMessage(
-            error.message
-          );
-
-        } else {
-
-          setErrorMessage(
-            "An unexpected forecast error occurred."
-          );
-        }
       }
     };
 

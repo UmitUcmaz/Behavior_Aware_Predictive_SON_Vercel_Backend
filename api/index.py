@@ -841,3 +841,6 @@ async def son_evaluate_poc(
                 f"{exc}"
             ),
         ) from exc
+
+from api.upload_routes import router as upload_router
+app.include_router(upload_router)
