@@ -1,0 +1,13 @@
+{
+    "selected_date_column": "SDATE",
+    "cell_columns": [
+        "CELL_NAME"
+    ],
+    "kpi_columns": [
+        "LTE_UL_PRB_UTILIZATION_PCT",
+        "LTE_DL_PRB_UTILIZATION_PCT",
+        "LTE_TRAFFIC_ACTIVEUSER_MAX"
+    ],
+    "total_rows": 70767,
+    "total_columns": 5
+}

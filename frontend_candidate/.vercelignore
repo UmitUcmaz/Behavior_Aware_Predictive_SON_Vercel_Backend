@@ -1,0 +1,10 @@
+.env*
+out
+preview_*
+Environment
+*.bak*
+*.log
+*.tmp
+*.zip
+tests
+*.md

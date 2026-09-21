@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
+const read=p=>readFileSync(new URL('../src/'+p,import.meta.url),'utf8');
+const source=read('app/validation/page.tsx');const tree=ts.createSourceFile('page.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+const nodes=[];function visit(n){if(ts.isJsxElement(n))nodes.push(n);ts.forEachChild(n,visit);}visit(tree);
+const byClass=c=>nodes.find(n=>n.openingElement.attributes.properties.some(a=>a.name?.getText(tree)==='className'&&a.initializer?.text?.split(' ').includes(c)));
+test('validation status belongs to configuration and export to accuracy',()=>{const config=byClass('validation-config').getText(tree);assert.match(config,/Validation Status/);const row=byClass('validation-summary-row').getText(tree);assert.match(row,/Matching Summary/);assert.match(row,/Accuracy Summary/);assert.doesNotMatch(row,/Validation Status/);const accuracy=byClass('validation-accuracy-panel').getText(tree);assert.match(accuracy,/Export Validation CSV/);assert.match(accuracy,/api\/validation-download/);assert.match(accuracy,/result.metrics.map/);assert.ok(source.indexOf('<ValidationComparisonChart')>byClass('validation-summary-row').getEnd());assert.doesNotMatch(source,/Export & Actions|validation-middle-grid/);});
+test('generated dataset stays compact without removing the generation ID or summary date range',()=>{const s=read('app/forecast/page.tsx');assert.doesNotMatch(s,/Leak-Safe Split|History ends|Ground truth starts|Generated data stays in Private Blob/);assert.match(s,/generation.generation_id/);assert.match(s,/historical rows/);assert.match(s,/Date Range/);});
+test('Home mounts live metrics and global anonymous heartbeat without server credentials',()=>{assert.match(read('app/page.tsx'),/<PlatformActivity/);assert.match(read('app/layout.tsx'),/<PlatformSessionHeartbeat/);const client=read('components/PlatformActivity.tsx');assert.match(client,/localStorage.getItem/);assert.match(client,/crypto.randomUUID/);assert.match(client,/120000/);assert.match(client,/api\/platform-activity/);assert.doesNotMatch(client,/BLOB_READ_WRITE_TOKEN|BACKEND_PROTECTION_BYPASS/);assert.match(read('app/globals.css'),/v6-site-metrics-head span \{ color: #fff/);});

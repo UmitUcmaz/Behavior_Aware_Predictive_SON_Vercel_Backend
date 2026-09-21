@@ -1,0 +1,67 @@
+# Environment and credentials (sanitized examples may be committed)
+.env*
+!.env.example
+**/.vercel/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and build outputs
+**/node_modules/
+**/.next/
+**/out/
+**/coverage/
+venv/
+.venv/
+
+# Python and tool caches
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+*.tsbuildinfo
+
+# Generated datasets and runtime output; preserve data/processed metadata
+/data/outputs/
+/data/poc/
+/data/generated/
+/data/temp/
+/data/cache/
+
+# Profiling artifacts and generated reports
+/profiling/
+/profiling_outputs/
+/profiling_reports/
+/profile_outputs/
+/profile_reports/
+/reports/
+**/profiling/output/
+**/profiling/outputs/
+**/profiling/reports/
+*.prof
+*.pstats
+
+# Local generated, temporary and cache directories
+generated/
+temp/
+tmp/
+
+# Local smoke artifacts, logs and editor backups
+preview_*
+*.bak*
+*.log
+*.tmp
+*.zip
+backend_tree.txt
+.DS_Store
+
+# Private production model artifacts and source dataset
+/models/forecasting/*.joblib
+/source/network_traffic.csv.gz
+
+/models/clustering/*.joblib
+# Keep all model artifacts out of the public repository
+*.joblib
