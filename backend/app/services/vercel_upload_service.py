@@ -61,8 +61,31 @@ async def forecast_uploaded_csv(pathname, filename, horizon_steps, progress_call
                 'elapsed_seconds': round(time.perf_counter() - started, 2),
                 'progress_percent': min(event.get('progress_percent', 0), 99),
             })
-    # Defaults intentionally retain full raw preprocessing and Phase 2B model lifecycle.
-    result = await run_in_threadpool(engine.forecast, frame, horizon_steps, progress_callback=progress)
+    # Keep the exact full-input preprocessing, then reuse the engine's
+    # prepared-input API so all three RF models stay resident for this run.
+    preprocessing_started = time.perf_counter()
+    try:
+        progress({'stage': 'feature_engineering', 'current_step': 0,
+                  'rows_generated': 0, 'progress_percent': 0.0})
+    except Exception:
+        pass  # Match the engine: progress observers must not stop inference.
+    preprocessing_perf = {}
+    prepared, cell_col, time_col, kpis = await run_in_threadpool(
+        engine.preprocess_and_extract_features, frame, perf=preprocessing_perf)
+    preprocessing_seconds = time.perf_counter() - preprocessing_started
+
+    def prepared_progress(event):
+        # The initial feature-engineering event was emitted before preprocessing.
+        if event.get('stage') != 'feature_engineering':
+            progress(event)
+
+    result = await run_in_threadpool(
+        engine.forecast, prepared, horizon_steps,
+        progress_callback=prepared_progress,
+        prepared_columns=(cell_col, time_col, kpis), resident_models=True)
+    del prepared
+    result['preprocess_seconds'] = preprocessing_seconds
+    result['performance']['preprocess'] = preprocessing_perf
     forecast = result['export_df']
     cell_col, time_col = result['cell_col'], result['time_col']
     # Chart-only history mapping; inference above already used the untouched raw frame.

@@ -263,7 +263,7 @@ export default function ForecastExecutionStatus({
                     ? "100%"
                     : inspectionState ===
                         "inspecting"
-                      ? "VAL"
+                      ? <span style={{ fontSize: "11px", lineHeight: 1.2 }}>Validating</span>
                       : inspectionState ===
                           "validated"
                         ? "OK"

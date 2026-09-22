@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import gc
 import json
+import re
 import shutil
 import tempfile
 import time
@@ -29,6 +30,20 @@ GROUND_TRUTH_FILENAME = "ground_truth.csv"
 VALIDATION_FILENAME = "validation_matched.csv"
 SUMMARY_FILENAME = "summary.json"
 
+MAX_ACTUAL_UPLOAD_BYTES = 50 * 1024 * 1024
+
+ACTUAL_UPLOAD_PATTERN = re.compile(
+    r"validation-runs/uploads/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}/actual\.csv"
+)
+
+ACTUAL_UPLOAD_CONTENT_TYPES = {
+    "text/csv",
+    "application/csv",
+    "application/vnd.ms-excel",
+}
+
 
 def _validate_run_id(
     run_id: str,
@@ -46,6 +61,43 @@ def _validate_run_id(
         )
 
     return run_id
+
+
+def _validate_actual_upload_reference(
+    pathname: str,
+    filename: str,
+) -> str:
+    pathname = str(
+        pathname
+    ).strip()
+
+    filename = str(
+        filename
+    ).strip()
+
+    if not ACTUAL_UPLOAD_PATTERN.fullmatch(
+        pathname
+    ):
+        raise ValueError(
+            "Invalid uploaded actual CSV "
+            "reference."
+        )
+
+    if (
+        not filename.lower().endswith(
+            ".csv"
+        )
+        or len(filename) > 255
+        or re.search(
+            r"[\\/\x00-\x1f]",
+            filename,
+        )
+    ):
+        raise ValueError(
+            "Invalid actual CSV filename."
+        )
+
+    return pathname
 
 
 def _safe_metric(
@@ -246,8 +298,74 @@ async def _download_blob_bytes(
     return result.content
 
 
+async def _download_uploaded_actual_bytes(
+    pathname: str,
+    filename: str,
+) -> bytes:
+    pathname = (
+        _validate_actual_upload_reference(
+            pathname,
+            filename,
+        )
+    )
+
+    async with AsyncBlobClient() as client:
+        info = await client.head(
+            pathname
+        )
+
+    if (
+        info.size <= 0
+        or info.size
+        > MAX_ACTUAL_UPLOAD_BYTES
+    ):
+        raise ValueError(
+            "Actual CSV must be non-empty "
+            "and no larger than 50 MiB."
+        )
+
+    content_type = (
+        str(
+            info.content_type
+            or ""
+        )
+        .split(
+            ";",
+            1,
+        )[0]
+        .strip()
+        .lower()
+    )
+
+    if (
+        content_type
+        not in ACTUAL_UPLOAD_CONTENT_TYPES
+    ):
+        raise ValueError(
+            "Uploaded actual object must "
+            "have CSV content type."
+        )
+
+    content = await _download_blob_bytes(
+        pathname
+    )
+
+    if (
+        len(content)
+        > MAX_ACTUAL_UPLOAD_BYTES
+    ):
+        raise ValueError(
+            "Actual CSV exceeds the "
+            "50 MiB upload limit."
+        )
+
+    return content
+
+
 async def validate_forecast_run(
     run_id: str,
+    actual_pathname: str | None = None,
+    actual_filename: str | None = None,
 ):
     request_started = time.perf_counter()
 
@@ -293,35 +411,86 @@ async def validate_forecast_run(
             "ID mismatch."
         )
 
-    generation_id = str(
+    raw_generation_id = (
         run_metadata.get(
-            "generation_id",
-            "",
+            "generation_id"
         )
-    ).strip()
-
-    if not generation_id:
-        raise ValueError(
-            "Forecast run is not linked "
-            "to a generated dataset."
-        )
-
-    if (
-        not generation_id.startswith("GEN-")
-        or "/" in generation_id
-        or "\\" in generation_id
-        or ".." in generation_id
-    ):
-        raise ValueError(
-            "Invalid generation_id in "
-            "forecast metadata."
-        )
-
-    ground_truth_pathname = (
-        f"{GENERATIONS_BLOB_PREFIX}/"
-        f"{generation_id}/"
-        f"{GROUND_TRUTH_FILENAME}"
     )
+
+    generation_id = (
+        str(
+            raw_generation_id
+        ).strip()
+        if raw_generation_id
+        else None
+    )
+
+    use_uploaded_actual = (
+        actual_pathname is not None
+        or actual_filename is not None
+    )
+
+    if use_uploaded_actual:
+        if (
+            not actual_pathname
+            or not actual_filename
+        ):
+            raise ValueError(
+                "Uploaded actual CSV requires "
+                "both pathname and filename."
+            )
+
+        actual_source = (
+            "uploaded_actual"
+        )
+
+        actual_source_label = (
+            "Uploaded Actual Network Data"
+        )
+
+        resolved_actual_filename = (
+            str(actual_filename).strip()
+        )
+
+    else:
+        if not generation_id:
+            raise ValueError(
+                "Forecast run is not linked "
+                "to a generated dataset. "
+                "Upload actual network data "
+                "for this forecast."
+            )
+
+        if (
+            not generation_id.startswith(
+                "GEN-"
+            )
+            or "/" in generation_id
+            or "\\" in generation_id
+            or ".." in generation_id
+        ):
+            raise ValueError(
+                "Invalid generation_id in "
+                "forecast metadata."
+            )
+
+        ground_truth_pathname = (
+            f"{GENERATIONS_BLOB_PREFIX}/"
+            f"{generation_id}/"
+            f"{GROUND_TRUTH_FILENAME}"
+        )
+
+        actual_source = (
+            "generated_ground_truth"
+        )
+
+        actual_source_label = (
+            "Generated Ground Truth"
+        )
+
+        resolved_actual_filename = (
+            GROUND_TRUTH_FILENAME
+        )
 
     forecast_bytes = (
         await _download_blob_bytes(
@@ -329,11 +498,20 @@ async def validate_forecast_run(
         )
     )
 
-    actual_bytes = (
-        await _download_blob_bytes(
-            ground_truth_pathname
+    if use_uploaded_actual:
+        actual_bytes = (
+            await _download_uploaded_actual_bytes(
+                actual_pathname,
+                actual_filename,
+            )
         )
-    )
+
+    else:
+        actual_bytes = (
+            await _download_blob_bytes(
+                ground_truth_pathname
+            )
+        )
 
     blob_download_seconds = (
         time.perf_counter()
@@ -726,13 +904,13 @@ async def validate_forecast_run(
                 generation_id
             ),
             "actual_source": (
-                "generated_ground_truth"
+                actual_source
             ),
             "actual_source_label": (
-                "Generated Ground Truth"
+                actual_source_label
             ),
             "actual_filename": (
-                GROUND_TRUTH_FILENAME
+                resolved_actual_filename
             ),
             "forecast_rows": (
                 forecast_rows

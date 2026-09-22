@@ -13231,3 +13231,37 @@ No JSX layout rewrite is required.
   .validation-page .validation-chart-empty { height: 180px; }
 }
 
+
+/* Compact actual-file picker; preserve the shared validation panel layout. */
+.validation-page .validation-upload-compact {
+  height: auto;
+  min-width: 0;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 3px;
+  align-items: center;
+  text-align: left;
+}
+.validation-page .validation-upload-compact > span {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  font-size: 22px;
+}
+.validation-page .validation-upload-compact > strong {
+  grid-column: 2;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.validation-page .validation-upload-compact > small {
+  grid-column: 2;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}

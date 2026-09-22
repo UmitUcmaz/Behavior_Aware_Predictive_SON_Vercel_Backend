@@ -20,6 +20,7 @@ const POST_PATHS = [
   /^dataset-generator\/generate(?:\/stream)?$/,
   /^forecast\/(inspect|start|generated(?:\/stream)?)$/,
   /^validate$/,
+  /^validate-blob$/,
   /^son\/evaluate$/,
 ];
 

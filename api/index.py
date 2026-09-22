@@ -188,6 +188,28 @@ class SonEvaluateRequest(
     rules: SonRulesRequest
 
 
+class ValidationBlobRequest(
+    BaseModel
+):
+    run_id: str = Field(
+        ...,
+        min_length=5,
+        max_length=64,
+    )
+
+    pathname: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+    )
+
+    filename: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+    )
+
+
 # =========================================================
 # BASIC STATUS
 # =========================================================
@@ -561,6 +583,65 @@ async def validate_compatibility(
         return (
             await validate_forecast_run(
                 run_id=run_id,
+            )
+        )
+
+    except ValueError as exc:
+        gc.collect()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(
+                exc
+            ),
+        ) from exc
+
+    except FileNotFoundError as exc:
+        gc.collect()
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(
+                exc
+            ),
+        ) from exc
+
+    except Exception as exc:
+        gc.collect()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            ),
+        ) from exc
+
+
+@app.post(
+    "/api/validate-blob"
+)
+async def validate_blob_compatibility(
+    payload: ValidationBlobRequest,
+):
+    """
+    Reference-only validation endpoint.
+
+    The browser uploads the actual CSV directly
+    to Private Vercel Blob, then sends only the
+    Blob pathname and original filename here.
+    """
+
+    try:
+        return (
+            await validate_forecast_run(
+                run_id=payload.run_id,
+                actual_pathname=(
+                    payload.pathname
+                ),
+                actual_filename=(
+                    payload.filename
+                ),
             )
         )
 

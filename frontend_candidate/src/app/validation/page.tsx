@@ -6,13 +6,86 @@ import {
   useState,
 } from "react";
 
+import {
+  upload,
+} from "@vercel/blob/client";
+
 import ValidationComparisonChart
   from "@/components/ValidationComparisonChart";
+
+import {
+  validateCsvFile as validateActualCsvFile,
+} from "@/lib/validation-upload.mjs";
 
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL
   ?? "http://127.0.0.1:8000";
+
+
+async function uploadActualCsv(
+  file: File
+): Promise<{
+  pathname: string;
+}> {
+
+  validateActualCsvFile(
+    file
+  );
+
+  const pathname =
+    `validation-runs/uploads/${crypto.randomUUID()}/actual.csv`;
+
+  let uploaded;
+
+  try {
+    uploaded =
+      await upload(
+        pathname,
+        file,
+        {
+          access: "private",
+          handleUploadUrl:
+            "/api/validation-upload",
+          clientPayload:
+            JSON.stringify(
+              {
+                name:
+                  file.name,
+                size:
+                  file.size,
+                type:
+                  file.type,
+              }
+            ),
+          contentType:
+            "text/csv",
+          multipart:
+            true,
+        }
+      );
+
+  } catch {
+    throw new Error(
+      "Private actual CSV upload failed. Check your connection and retry (maximum 50 MiB)."
+    );
+  }
+
+  if (
+    !uploaded?.pathname
+    || uploaded.pathname
+      !== pathname
+  ) {
+    throw new Error(
+      "Actual CSV upload returned an invalid Blob reference."
+    );
+  }
+
+  return {
+    pathname:
+      uploaded.pathname,
+  };
+}
 
 
 type ForecastRun = {
@@ -385,34 +458,66 @@ export default function ValidationPage() {
       setResult(null);
       setError(null);
 
-      const formData =
-        new FormData();
-
-      formData.append(
-        "run_id",
-        runId
-      );
-
-      if (actualFile) {
-
-        formData.append(
-          "file",
-          actualFile
-        );
-      }
-
       try {
 
-        const response =
-          await fetch(
-            `${API_BASE_URL}/validate`,
-            {
-              method:
-                "POST",
-              body:
-                formData,
-            }
+        let response:
+          Response;
+
+        if (
+          actualFile
+          && !automaticGroundTruth
+        ) {
+
+          const uploaded =
+            await uploadActualCsv(
+              actualFile
+            );
+
+          response =
+            await fetch(
+              `${API_BASE_URL}/validate-blob`,
+              {
+                method:
+                  "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body:
+                  JSON.stringify(
+                    {
+                      run_id:
+                        runId,
+                      pathname:
+                        uploaded.pathname,
+                      filename:
+                        actualFile.name,
+                    }
+                  ),
+              }
+            );
+
+        } else {
+
+          const formData =
+            new FormData();
+
+          formData.append(
+            "run_id",
+            runId
           );
+
+          response =
+            await fetch(
+              `${API_BASE_URL}/validate`,
+              {
+                method:
+                  "POST",
+                body:
+                  formData,
+              }
+            );
+        }
 
         if (!response.ok) {
 
@@ -428,6 +533,11 @@ export default function ValidationPage() {
               detail =
                 String(
                   body.detail
+                );
+            } else if (body?.error) {
+              detail =
+                String(
+                  body.error
                 );
             }
 
@@ -758,7 +868,7 @@ export default function ValidationPage() {
 
             {!automaticGroundTruth && (
 
-              <label className="validation-upload validation-upload-active">
+              <label className="validation-upload validation-upload-active validation-upload-compact">
 
                 <input
                   ref={inputRef}
@@ -791,7 +901,7 @@ export default function ValidationPage() {
                     : "⇧"}
                 </span>
 
-                <strong>
+                <strong title={actualFile?.name}>
 
                   {actualFile
                     ? actualFile.name
@@ -806,7 +916,7 @@ export default function ValidationPage() {
                         actualFile.size
                         / 1024
                         / 1024
-                      ).toFixed(2)} MB · Ready for validation`
+                      ).toFixed(2)} MB · Ready`
                     : "Select actual network data covering the forecast period"}
 
                 </small>
